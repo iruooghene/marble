@@ -82,11 +82,12 @@ services:
         - ${PG_PORT:-5432}:${PG_PORT:-5432}
       volumes:
         - marble_marble-db:/data/postgres
+        - postgres-data:/var/lib/postgresql/data
       healthcheck:
-        test: [ "CMD-SHELL", "pg_isready -U postgres" ]
-        interval: 2s
-        timeout: 1s
+        test: [ "CMD", "pg_isready", "-U", "postgres", "-h", "marble-postgres" ]
+        interval: 10s
         retries: 5
+        timeout: 5s
 
   api: &backend
       <<: *backend-image-version
@@ -129,7 +130,8 @@ services:
       ports: [ ]
       volumes:
         - /mnt/c/Users/DELL/Downloads/marble-8ee29-ad3ba461c0d3.json:/service-account.json:ro
-
+      networks:
+        - marble-network
 
 
   app:
@@ -192,73 +194,119 @@ services:
       networks:
         - marble-network
 
+#  convoy:
+#    image: getconvoy/convoy:latest
+#    container_name: convoy-m
+#    depends_on:
+#    - db
+#    - redis
+#    environment:
+#      DATABASE_URL: "postgres://postgres:${PG_PASSWORD}@marble-postgres:5434/convoy"
+#
+#
+#    # 🔹 Ingestion Bucket Configuration
+#      STORAGE_INGESTION_MODE: "s3"
+#      STORAGE_INGESTION_S3_ACCESS_KEY: ${SUPABASE_ACCESS_KEY}
+#      STORAGE_INGESTION_S3_SECRET_KEY: ${SUPABASE_SECRET_ACCESS_KEY}
+#      STORAGE_INGESTION_S3_BUCKET: ingestion-bucket-url
+#      STORAGE_INGESTION_S3_REGION: eu-central-1
+#      STORAGE_INGESTION_S3_ENDPOINT: ${SUPABASE_ENDPOINT}
+#
+#    # 🔹 Case Manager Bucket Configuration
+#      STORAGE_CASE_MANAGER_MODE: "s3"
+#      STORAGE_CASE_MANAGER_S3_ACCESS_KEY: ${SUPABASE_ACCESS_KEY}
+#      STORAGE_CASE_MANAGER_S3_SECRET_KEY: ${SUPABASE_SECRET_ACCESS_KEY}
+#      STORAGE_CASE_MANAGER_S3_BUCKET: marble-bucket
+#      STORAGE_CASE_MANAGER_S3_REGION: eu-central-1
+#      STORAGE_CASE_MANAGER_S3_ENDPOINT: ${SUPABASE_ENDPOINT}
+#
+#    # Redis Connection
+#      REDIS_URL: "redis://redis:6379"
+#    ports:
+#      - "8080:8080"
+#    volumes:
+#      - convoy-data:/var/www/convoy
+#    networks:
+#      - marble-network
+
+
+
+#  convoy:
+#     image: getconvoy/convoy:latest
+#     container_name: convoy
+#     ports:
+#       - "5000:5000"
+#     environment:
+#       INGRESS_BASE_URL: "http://localhost:5000"
+#       DATABASE_URL: "postgres://username:password@host:5432/database"
+#     restart: always
+
+
+#  convoy-ui:
+#      image: convoy-image
+#      container_name: convoy-ui
+##      restart: always
+#      ports:
+#        - "8080:80"
+#      depends_on:
+#        - convoy
+
+
   convoy:
-    image: getconvoy/convoy:latest
-    container_name: convoy-convoy
-    depends_on:
-      - db
-      - redis
-    environment:
-      DATABASE_URL: "postgres://postgres:${PG_PASSWORD:-changeme}@db:5432/marble?sslmode=disable"
-
-      # 🔹 Ingestion Bucket Configuration
-      STORAGE_INGESTION_MODE: "s3"
-      STORAGE_INGESTION_S3_ACCESS_KEY: ${SUPABASE_ACCESS_KEY}
-      STORAGE_INGESTION_S3_SECRET_KEY: ${SUPABASE_SECRET_ACCESS_KEY}
-      STORAGE_INGESTION_S3_BUCKET: ingestion-bucket-url
-      STORAGE_INGESTION_S3_REGION: eu-central-1
-      STORAGE_INGESTION_S3_ENDPOINT: ${SUPABASE_ENDPOINT}
-
-      # 🔹 Case Manager Bucket Configuration
-      STORAGE_CASE_MANAGER_MODE: "s3"
-      STORAGE_CASE_MANAGER_S3_ACCESS_KEY: ${SUPABASE_ACCESS_KEY}
-      STORAGE_CASE_MANAGER_S3_SECRET_KEY: ${SUPABASE_SECRET_ACCESS_KEY}
-      STORAGE_CASE_MANAGER_S3_BUCKET: marble-bucket
-      STORAGE_CASE_MANAGER_S3_REGION: eu-central-1
-      STORAGE_CASE_MANAGER_S3_ENDPOINT: ${SUPABASE_ENDPOINT}
-
-      # Redis Connection
-      REDIS_URL: "redis://redis:6379"
+    image: convoypanel/convoy
+    container_name: convoy
     ports:
-      - "5000:5000"
+      - "80:80"
+    environment:
+      - APP_URL=http://localhost
+      - DB_DATABASE=convoy
+      - DB_USERNAME=convoy_user
+      - DB_PASSWORD=${PG_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - convoy-redis
+      - convoy-pgbouncer
     networks:
       - marble-network
 
-#  web:
-#      build:
-#        context: ./
-#        dockerfile: Dockerfile
-#      command: [ "/start.sh" ]
-#      volumes:
-#        - ./convoy.json:/convoy.json
-#      restart: on-failure
+
+#  pgbouncer:
+#      image: pgbouncer/pgbouncer:latest
+#      container_name: convoy-pgbouncer
+#      restart: always
+#      environment:
+#        DATABASE_URL: "postgres://postgres:${PG_PASSWORD:-changeme}@marble-postgres:5434/marble?sslmode=disable"
+#        DATABASES_HOST: marble-postgres
+#        PG_DATABASE: marble
+#        PG_HOST: postgresql
+#        PG_PORT: ${PG_PORT}
+#        PG_USER: postgres
+#        DATABASE_PASSWORD: ${PG_PASSWORD}
+#        POOL_MODE: transaction
+#        MAX_CLIENT_CONN: 100
+#        DEFAULT_POOL_SIZE: 20
 #      ports:
-#        - "5005:5005"
+#        - "6432:6432"
 #      depends_on:
 #        - db
-#        - redis
+#      networks:
+#        - marble-network
+  convoy-pgbouncer:
+    image: pgbouncer/pgbouncer
+    container_name: convoy-pgbouncer
+    environment:
+      - DB_HOST=marble-postgres
+      - DB_PORT=5434
+      - DB_USER=${DB_USERNAME}
+      - DB_PASSWORD=${PG_PASSWORD}
+      - DB_NAME=${DB_DATABASE}
+    ports:
+      - "6432:6432"
+    networks:
+      - marble-network
 
-  pgbouncer:
-      image: bitnami/pgbouncer:latest
-      container_name: convoy-pgbouncer
-      restart: always
-      environment:
-        PGBOUNCER_DATABASE: marble
-        PGBOUNCER_HOST: db
-        PGBOUNCER_PORT: ${PG_PORT}
-        PGBOUNCER_USER: postgres
-        POSTGRESQL_PASSWORD: ${PG_PASSWORD:-changeme}
-        POOL_MODE: transaction
-        MAX_CLIENT_CONN: 100
-        DEFAULT_POOL_SIZE: 20
-      ports:
-        - "6432:6432"
-      networks:
-        - marble-network
-
-
-  redis:
-    image: redis:7
+  convoy-redis:
+    image: redis:latest
     container_name: convoy-redis
     restart: always
     ports:
@@ -268,6 +316,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    volumes:
+      - redis-data:/data
+
     networks:
       - marble-network
 
@@ -277,6 +328,10 @@ networks:
 
 
 volumes:
+  convoy-data:
+  marble-data:
+  redis-data:
+  postgres-data:
   es_data:
     driver: local
 

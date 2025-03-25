@@ -1,20 +1,38 @@
-# Build UI
-FROM node:18 AS node-env
+
+FROM node:14 as node-env
 WORKDIR /app
-
-# Copy only the UI code
-COPY convoy/web/ui/dashboard .
-
-# Install dependencies and build the UI
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* \
-    && git config --global url."https://".insteadOf git://
-
+COPY ./web/ui/dashboard .
+RUN git config --global url."https://".insteadOf git://
 RUN npm install
 RUN npm run build
 
-# Serve UI with a lightweight web server
-FROM nginx:latest
-COPY --from=node-env /app/dist /usr/share/nginx/html
+FROM golang:1.22 as build-env
+WORKDIR /go/src/frain-dev/convoy
 
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+COPY ./go.mod /go/src/frain-dev/convoy
+COPY ./go.sum /go/src/frain-dev/convoy
+
+COPY --from=node-env /app/dist /go/src/frain-dev/convoy/api/ui/build
+
+# Get dependencies - will also be cached if we don't change mod/sum
+RUN go mod download
+RUN go mod verify
+
+# COPY the source code as the last step
+COPY . .
+
+RUN CGO_ENABLED=0
+RUN go install ./cmd
+
+FROM alpine:3.16.2
+COPY --from=build-env /go/bin/cmd /
+COPY --from=build-env /go/src/frain-dev/convoy/internal/email/templates/* templates/
+COPY --from=build-env /go/src/frain-dev/convoy/configs/local/start.sh /
+
+RUN chmod +x /cmd
+RUN apk add --no-cache gcompat
+
+EXPOSE 8080
+
+# Add this line to run the Go application
+CMD ["/cmd"]
