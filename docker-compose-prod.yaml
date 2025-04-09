@@ -111,6 +111,8 @@ services:
         - /mnt/c/Users/DELL/Downloads/marble-8ee29-ad3ba461c0d3.json:/service-account.json:ro
       environment:
         <<: [ *shared-env, *backend-env ]
+        CONVOY_API_URL: "http://convoy-m:8080"
+        CONVOY_API_KEY: ${CONVOY_API_KEY}
       networks:
         - marble-network
 
@@ -194,17 +196,62 @@ services:
       networks:
         - marble-network
 
+  convoy-postgres:
+    image: postgres:15
+    container_name: convoy_postgres
+    environment:
+        POSTGRES_DB: convoy
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: IruoVict21
+    ports:
+      - "5435:5432"
+    volumes:
+        - convoy_postgres_data:/var/lib/postgresql/data
+    networks:
+        - marble-network
+
+  convoy-nginx:
+    image: nginx:alpine
+    ports:
+      - "5000:80"  # Now access via port 5000 on host
+    volumes:
+
+      - /mnt/c/Users/DELL/marble/nginx-config:/etc/nginx/conf.d:ro
+      - ./convoy:/var/www/html  # Same volume as PHP container
+    depends_on:
+      - convoy-panel
+    networks:
+      - marble-network
+
+  convoy-panel:
+    build:
+        context: ./convoy
+        dockerfile: dockerfiles/workspace/Dockerfile
+    command: ["php-fpm", "-F", "-R"]
+    env_file:
+        - ./.env
+#    ports:
+#      - "5000:9000"
+    volumes:
+        - ./convoy:/var/www/html
+    depends_on:
+        - convoy-postgres
+    networks:
+        - marble-network
+
+
+
 #  convoy:
 #    image: getconvoy/convoy:latest
 #    container_name: convoy-m
+#    ports:
+#      - "8081:8080"
 #    depends_on:
 #    - db
 #    - redis
 #    environment:
-#      DATABASE_URL: "postgres://postgres:${PG_PASSWORD}@marble-postgres:5434/convoy"
-#
-#
-#    # 🔹 Ingestion Bucket Configuration
+#      DATABASE_URL: "postgres://postgres:${PG_PASSWORD}@marble-postgres:5432/convoy"
+#     # 🔹 Ingestion Bucket Configuration
 #      STORAGE_INGESTION_MODE: "s3"
 #      STORAGE_INGESTION_S3_ACCESS_KEY: ${SUPABASE_ACCESS_KEY}
 #      STORAGE_INGESTION_S3_SECRET_KEY: ${SUPABASE_SECRET_ACCESS_KEY}
@@ -222,54 +269,54 @@ services:
 #
 #    # Redis Connection
 #      REDIS_URL: "redis://redis:6379"
-#    ports:
-#      - "8080:8080"
+##    "ports:
+##      - "8080:8080""
 #    volumes:
 #      - convoy-data:/var/www/convoy
 #    networks:
 #      - marble-network
-
-
-
-#  convoy:
-#     image: getconvoy/convoy:latest
-#     container_name: convoy
-#     ports:
-#       - "5000:5000"
-#     environment:
-#       INGRESS_BASE_URL: "http://localhost:5000"
-#       DATABASE_URL: "postgres://username:password@host:5432/database"
-#     restart: always
-
-
-#  convoy-ui:
-#      image: convoy-image
-#      container_name: convoy-ui
-##      restart: always
-#      ports:
-#        - "8080:80"
-#      depends_on:
-#        - convoy
-
-
-  convoy:
-    image: convoypanel/convoy
-    container_name: convoy
-    ports:
-      - "80:80"
-    environment:
-      - APP_URL=http://localhost
-      - DB_DATABASE=convoy
-      - DB_USERNAME=convoy_user
-      - DB_PASSWORD=${PG_PASSWORD}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-    depends_on:
-      - convoy-redis
-      - convoy-pgbouncer
-    networks:
-      - marble-network
-
-
+#
+#
+#
+##  convoy:
+##     image: getconvoy/convoy:latest
+##     container_name: convoy
+##     ports:
+##       - "5000:5000"
+##     environment:
+##       INGRESS_BASE_URL: "http://localhost:5000"
+##       DATABASE_URL: "postgres://username:password@host:5432/database"
+##     restart: always
+#
+#
+##  convoy-ui:
+##      image: convoy-image
+##      container_name: convoy-ui
+###      restart: always
+##      ports:
+##        - "8080:80"
+##      depends_on:
+##        - convoy
+#
+#
+##  convoy:
+##    image: convoypanel/convoy
+##    container_name: convoy
+##    ports:
+##      - "80:80"
+##    environment:
+##      - APP_URL=http://localhost
+##      - DB_DATABASE=convoy
+##      - DB_USERNAME=convoy_user
+##      - DB_PASSWORD=${PG_PASSWORD}
+##      - REDIS_PASSWORD=${REDIS_PASSWORD}
+##    depends_on:
+##      - convoy-redis
+##      - convoy-pgbouncer
+##    networks:
+##      - marble-network
+#
+#
 #  pgbouncer:
 #      image: pgbouncer/pgbouncer:latest
 #      container_name: convoy-pgbouncer
@@ -291,36 +338,38 @@ services:
 #        - db
 #      networks:
 #        - marble-network
-  convoy-pgbouncer:
-    image: pgbouncer/pgbouncer
-    container_name: convoy-pgbouncer
-    environment:
-      - DB_HOST=marble-postgres
-      - DB_PORT=5434
-      - DB_USER=${DB_USERNAME}
-      - DB_PASSWORD=${PG_PASSWORD}
-      - DB_NAME=${DB_DATABASE}
-    ports:
-      - "6432:6432"
-    networks:
-      - marble-network
-
-  convoy-redis:
-    image: redis:latest
-    container_name: convoy-redis
-    restart: always
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    volumes:
-      - redis-data:/data
-
-    networks:
-      - marble-network
+#
+##  convoy-pgbouncer:
+##    image: pgbouncer/pgbouncer
+##    container_name: convoy-pgbouncer
+##    environment:
+##      - DATABASE_URL="postgres://postgres:${PG_PASSWORD:-changeme}@marble-postgres:5434/marble?sslmode=disable"
+##      - DATABASE_HOST=marble-postgres
+##      - DB_PORT=5433
+##      - DB_USER=${DB_USERNAME}
+##      - DB_PASSWORD=${PG_PASSWORD}
+##      - DB_NAME=${DB_DATABASE}
+##    ports:
+##      - "6432:6432"
+##    networks:
+##      - marble-network
+#
+#  redis:
+#    image: redis:latest
+#    container_name: convoy-redis
+#    restart: always
+#    ports:
+#      - "6370:6379"
+#    healthcheck:
+#      test: [ "CMD", "redis-cli", "ping" ]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 3
+#    volumes:
+#      - redis-data:/data
+#
+#    networks:
+#      - marble-network
 
 networks:
   marble-network:
@@ -332,6 +381,7 @@ volumes:
   marble-data:
   redis-data:
   postgres-data:
+  convoy_postgres_data:
   es_data:
     driver: local
 
